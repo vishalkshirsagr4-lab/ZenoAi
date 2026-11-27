@@ -44,6 +44,12 @@ def boot():
             "WHERE key='model' AND value='deepseek-v4-flash'",
             (config.apinex_model,),
         )
+        # Remove only the previous bundled persona if it was copied into
+        # the persistent prompt setting; preserve unrelated owner custom prompts.
+        conn.execute(
+            "DELETE FROM settings WHERE key='system_prompt' "
+            "AND (value LIKE '%SKHHACKER LORD%' OR value LIKE '%<operating_instruction>%')"
+        )
         conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT, actor_id INTEGER NOT NULL,
             action TEXT NOT NULL, target_id INTEGER, details TEXT,
