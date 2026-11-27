@@ -2,11 +2,12 @@ import html
 import io
 import json
 import logging
+import re
 import time
 import requests
 from config import config
 from core.ai import ask_ai
-from core.project_reader import read_zip_bytes, read_single_source
+from core.project_reader import read_zip_bytes, read_tar_bytes, read_single_source
 from core.storage import (
     clear_history, register_user, is_banned, is_admin, add_admin, remove_admin,
     set_banned, stats, list_admins, set_setting, get_setting, subscribers,
@@ -41,14 +42,123 @@ def send_text(chat_id, text, reply_markup=None, parse_mode=None):
     return _api("sendMessage", payload)
 
 
-def send_long_answer(chat_id, answer):
+CODE_LANGUAGES = {
+    "python": ".py", "py": ".py", "javascript": ".js", "js": ".js",
+    "typescript": ".ts", "ts": ".ts", "jsx": ".jsx", "tsx": ".tsx",
+    "java": ".java", "kotlin": ".kt", "dart": ".dart", "c": ".c",
+    "cpp": ".cpp", "c++": ".cpp", "csharp": ".cs", "cs": ".cs",
+    "go": ".go", "rust": ".rs", "rs": ".rs", "php": ".php",
+    "ruby": ".rb", "rb": ".rb", "swift": ".swift", "sql": ".sql",
+    "html": ".html", "css": ".css", "json": ".json", "yaml": ".yaml",
+    "yml": ".yml", "bash": ".sh", "sh": ".sh", "shell": ".sh",
+    "powershell": ".ps1", "ps1": ".ps1", "xml": ".xml", "toml": ".toml",
+    "markdown": ".md", "md": ".md",
+}
+CODE_REQUEST_RE = re.compile(
+    r"\b(write|create|generate|build|implement|code|program|script|develop)\b",
+    re.IGNORECASE,
+)
+FILE_HINT_RE = re.compile(
+    r"^\s*(?:#|//|/\*|<!--|;|--)?\s*(?:file|filename|path)\s*:\s*([^\s*]+)",
+    re.IGNORECASE,
+)
+
+
+def _code_blocks(answer):
+    fence = chr(96) * 3
+    pattern = re.compile(r"(?s)" + re.escape(fence) + r"([A-Za-z0-9_+#.-]*)(?:[ \t]+([^\n]+))?\n(.*?)" + re.escape(fence))
+    blocks = []
+    for match in pattern.finditer(answer):
+        language = (match.group(1) or "").strip().lower()
+        hint = (match.group(2) or "").strip()
+        body = match.group(3).strip("\n\r")
+        filename = None
+        if hint and ("/" in hint or "." in hint) and len(hint.split()) == 1:
+            filename = hint.strip(chr(96) + "'\"")
+        lines = body.splitlines()
+        if lines:
+            file_match = FILE_HINT_RE.match(lines[0])
+            if file_match:
+                filename = file_match.group(1).strip(chr(96) + "'\"")
+                body = "\n".join(lines[1:]).lstrip("\n")
+        blocks.append({"language": language, "filename": filename, "content": body})
+    return blocks
+
+
+def _safe_output_name(name):
+    name = str(name or "").replace("\\", "/").split("/")[-1].strip()
+    if not name or name in {".", ".."} or not re.fullmatch(r"[A-Za-z0-9_.-]{1,100}", name):
+        return None
+    return name if "." in name else None
+
+
+def _build_code_artifact(answer, user_prompt):
+    if not CODE_REQUEST_RE.search(user_prompt or ""):
+        return None
+    blocks = _code_blocks(answer)
+    if not blocks:
+        return None
+    if len(blocks) > 1:
+        files = []
+        for block in blocks:
+            filename = _safe_output_name(block["filename"])
+            if not filename:
+                return None
+            files.append((filename, block["content"]))
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+            for filename, content in files:
+                bundle.writestr(filename, content)
+        archive.seek(0)
+        archive.name = "zenoai_project.zip"
+        return ("zip", archive)
+    block = blocks[0]
+    filename = _safe_output_name(block["filename"])
+    if not filename:
+        extension = CODE_LANGUAGES.get(block["language"].split("-", 1)[0])
+        if extension:
+            filename = "main" + extension
+    if not filename:
+        return None
+    extension = "." + filename.rsplit(".", 1)[-1].lower()
+    mime = {
+        ".py": "text/x-python", ".js": "text/javascript", ".ts": "text/typescript",
+        ".java": "text/x-java-source", ".html": "text/html", ".css": "text/css",
+        ".json": "application/json", ".sql": "application/sql", ".sh": "text/x-shellscript",
+        ".xml": "application/xml", ".md": "text/markdown",
+    }.get(extension, "text/plain")
+    output = io.BytesIO(block["content"].encode("utf-8"))
+    output.name = filename
+    return ("file", output, mime)
+
+
+def _send_document(chat_id, file_obj, filename, caption, mime_type="application/octet-stream"):
+    file_obj.seek(0)
+    return _api(
+        "sendDocument",
+        {"chat_id": chat_id, "caption": caption},
+        files={"document": (filename, file_obj, mime_type)},
+        timeout=120,
+    )
+
+
+def send_long_answer(chat_id, answer, user_prompt=""):
+    artifact = _build_code_artifact(answer, user_prompt)
+    if artifact:
+        kind, file_obj, *metadata = artifact
+        if kind == "zip":
+            _send_document(chat_id, file_obj, "zenoai_project.zip", "✨ ZenoAI generated project")
+        else:
+            _send_document(chat_id, file_obj, file_obj.name, "✨ ZenoAI generated source code", metadata[0])
+        explanation = re.sub(r"(?s)" + re.escape(chr(96) * 3) + r".*?" + re.escape(chr(96) * 3), "", answer).strip()
+        if explanation:
+            send_text(chat_id, explanation[:MAX_MESSAGE])
+        return
     if len(answer) <= MAX_MESSAGE:
         return send_text(chat_id, answer)
-    send_text(chat_id, "🧩 The complete answer is attached as a text file so the code and formatting stay intact.")
+    send_text(chat_id, "🧩 The complete response is attached as a text file so the formatting stays intact.")
     file_obj = io.BytesIO(answer.encode("utf-8"))
-    file_obj.name = "zenoai_answer.txt"
-    return _api("sendDocument", {"chat_id": chat_id, "caption": "✨ ZenoAI complete response"},
-                files={"document": ("zenoai_answer.txt", file_obj, "text/plain")}, timeout=90)
+    return _send_document(chat_id, file_obj, "zenoai_answer.txt", "✨ ZenoAI complete response", "text/plain")
 
 
 def home_keyboard():
@@ -217,13 +327,15 @@ def _analyze_upload(message, document):
     data = _download_telegram_file(document["file_id"])
     if filename.lower().endswith(".zip"):
         context, file_count, text_count = read_zip_bytes(data)
+    elif filename.lower().endswith((".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz")):
+        context, file_count, text_count = read_tar_bytes(data)
         task = ("Review this uploaded software project. Summarize its architecture, list confirmed issues by severity "
                 "and file path, explain causes and provide concrete fixes. Mention unverified areas; do not claim tests ran. "
                 f"Archive entries: {file_count}; text files included: {text_count}.")
     else:
         context, _, _ = read_single_source(filename, data)
         task = f"Review {filename}: explain its purpose, identify concrete bugs and risks, and suggest corrected code."
-    send_long_answer(chat_id, ask_ai(chat_id, task, extra_context=context))
+    send_long_answer(chat_id, ask_ai(chat_id, task, extra_context=context), task)
 
 
 def _admin_help(chat_id, owner):
@@ -450,7 +562,7 @@ def _handle_message(message):
         if not is_admin(user_id) and not _membership_gate(chat_id, user_id):
             return
         send_text(chat_id, "🧠 <b>ZenoAI is thinking…</b>", parse_mode="HTML")
-        send_long_answer(chat_id, ask_ai(chat_id, text))
+        send_long_answer(chat_id, ask_ai(chat_id, text), text)
     except Exception:
         log.exception("AI response failed")
         send_text(chat_id, "⚠️ I couldn't complete that request. Check the APInex key, model ID and account limits.")
