@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import time
+import zipfile
 import requests
 from config import config
 from core.ai import ask_ai
