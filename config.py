@@ -1,6 +1,5 @@
 import os
 from dataclasses import dataclass
-from pathlib import Path
 
 try:
     from dotenv import load_dotenv
@@ -18,6 +17,7 @@ class Config:
     bot_name: str = os.getenv("BOT_NAME", "ZenoAI").strip() or "ZenoAI"
     database_path: str = os.getenv("DATABASE_PATH", "data/zenoai.db")
     system_prompt: str = os.getenv("AI_SYSTEM_PROMPT", "").strip()
+    owner_id: int = int(os.getenv("OWNER_ID", "0") or "0")
     max_upload_mb: int = int(os.getenv("MAX_UPLOAD_MB", "15"))
     max_archive_unpacked_mb: int = int(os.getenv("MAX_ARCHIVE_UNPACKED_MB", "30"))
     max_archive_files: int = int(os.getenv("MAX_ARCHIVE_FILES", "300"))
@@ -35,6 +35,8 @@ def validate_config():
         missing.append("TELEGRAM_BOT_TOKEN")
     if not config.apinex_api_key:
         missing.append("APINEX_API_KEY")
+    if not config.owner_id:
+        missing.append("OWNER_ID")
     if missing:
         raise RuntimeError("Missing required environment variables: " + ", ".join(missing))
     if config.max_upload_mb < 1 or config.max_upload_mb > 20:
