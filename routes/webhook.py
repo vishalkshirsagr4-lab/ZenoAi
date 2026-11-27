@@ -206,6 +206,7 @@ def _admin_help(chat_id, owner):
             "/maintenance on|off",
             "/grant USER_ID DAYS and /revoke USER_ID",
             "/forceadd CHAT_ID JOIN_URL", "/forceremove CHAT_ID", "/forcelist",
+            "/limits TRIAL_DAYS TRIAL_REQUESTS FREE_DAILY_LIMIT",
             "/audit — recent administrative actions",
         ]
     lines += ["", "Use the dashboard buttons for quick status and control panels."]
@@ -300,6 +301,20 @@ def _admin_command(message, text, user_id):
             return
         revoke_membership(user_id, int(arg))
         send_text(chat_id, "Access revoked for {}.".format(arg))
+
+    elif command == "/limits" and owner:
+        values = arg.split()
+        if len(values) != 3 or not all(x.isdigit() for x in values):
+            send_text(chat_id, "Usage: /limits TRIAL_DAYS TRIAL_REQUESTS FREE_DAILY_LIMIT")
+            return
+        days, trial_requests, free_daily = map(int, values)
+        if not (1 <= days <= 365 and 1 <= trial_requests <= 10000 and 0 <= free_daily <= 1000):
+            send_text(chat_id, "Limits: trial days 1–365, trial requests 1–10000, free daily 0–1000.")
+            return
+        set_setting("trial_days", days, user_id)
+        set_setting("trial_requests", trial_requests, user_id)
+        set_setting("free_daily_limit", free_daily, user_id)
+        send_text(chat_id, "✅ New-user trial and Free plan limits updated. Existing memberships keep their current expiry and trial balance.")
     elif command == "/forceadd" and owner:
         values = arg.split(maxsplit=1)
         if len(values) != 2 or not (values[0].startswith("@") or values[0].lstrip("-").isdigit()) or not values[1].startswith("https://t.me/"):
@@ -370,7 +385,7 @@ def _handle_message(message):
     if text.split(maxsplit=1)[0].split("@", 1)[0].lower() in {
         "/admin", "/stats", "/ban", "/unban", "/broadcast", "/addadmin",
         "/removeadmin", "/model", "/prompt", "/maintenance", "/audit",
-        "/grant", "/revoke", "/forceadd", "/forceremove", "/forcelist"
+        "/grant", "/revoke", "/forceadd", "/forceremove", "/forcelist", "/limits"
     }:
         if not is_admin(user_id):
             send_text(chat_id, "⛔ You do not have permission to use administrative commands.")
