@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 from openai import OpenAI
 from config import config
 from core.storage import add_message, get_history, get_setting
@@ -30,7 +31,19 @@ def get_system_prompt():
 
 def ask_ai(chat_id, user_text, extra_context=None):
     history = get_history(chat_id)
-    messages = [{"role": "system", "content": get_system_prompt()}]
+    system_prompt = get_system_prompt()
+    if re.search(r"\b(write|create|generate|build|implement|code|program|script|develop)\b", str(user_text), re.IGNORECASE):
+        system_prompt += (
+            "\n\nCODE OUTPUT RULES: When the user asks you to write or generate code, "
+            "put each complete source file in its own fenced code block and use the correct language tag "
+            "(python, javascript, typescript, java, kotlin, dart, cpp, csharp, go, rust, php, ruby, swift, "
+            "sql, html, css, json, yaml, bash, powershell, xml, or toml). "
+            "For a single file, use one fenced block. For a multi-file project, put a first-line filename "
+            "comment inside every block, such as '# filename: bot.py' or '// filename: app.js'. "
+            "Do not omit required code or replace source code with a .txt explanation. "
+            "Keep explanations outside the code blocks."
+        )
+    messages = [{"role": "system", "content": system_prompt}]
     messages.extend(history)
     prompt = str(user_text)
     if extra_context:
