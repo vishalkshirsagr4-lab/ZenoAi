@@ -51,3 +51,24 @@ Open the bot and use `/admin`:
 - Admins: `/stats`, `/ban USER_ID`, `/unban USER_ID`, `/broadcast MESSAGE`.
 - Announcements are delivered only to users who explicitly use `/subscribe`; users can opt out with `/unsubscribe`.
 - Admin actions are recorded in the audit log. The owner cannot be banned or demoted.
+
+## Membership and required channel/group joins
+
+Membership is usage-based; no payment gateway or UPI collection is configured:
+- New users receive a 7-day trial with 10 AI requests by default.
+- After trial expiry or exhaustion, users move to the Free plan with 3 AI requests per UTC day.
+- The owner can grant time-limited unlimited access with `/grant USER_ID DAYS` and revoke it with `/revoke USER_ID`.
+- Users can check their plan from the Membership button or `/membership`.
+- The owner can change defaults for new trials and Free users with `/limits TRIAL_DAYS TRIAL_REQUESTS FREE_DAILY_LIMIT`.
+
+Only the bot owner can manage access grants, force-join destinations and maintenance. Additional admins cannot change these settings.
+
+Owner force-join commands:
+- `/forceadd @channel https://t.me/channel` — add a public channel/group.
+- `/forceadd -1001234567890 https://t.me/+invitecode` — add a private channel/group by numeric chat ID and invite link.
+- `/forceremove @channel` or `/forceremove -1001234567890` — remove a destination.
+- `/forcelist` — list required destinations.
+
+Add the bot as an administrator in every required channel/group. Telegram's `getChatMember` check is only reliable for other users when the bot is an administrator. The bot checks membership before AI requests and uploaded-file analysis; users can tap **I've joined — Verify** after joining. Owner and admins bypass the join and usage gates.
+
+Membership expiry is checked automatically when a user next interacts. Keep the Render persistent disk enabled so membership records and settings survive redeployments.
