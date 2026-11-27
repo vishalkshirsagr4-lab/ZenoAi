@@ -42,6 +42,15 @@ def boot():
             action TEXT NOT NULL, target_id INTEGER, details TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS memberships (
+            user_id INTEGER PRIMARY KEY, plan TEXT NOT NULL DEFAULT 'trial',
+            expires_at TEXT, trial_remaining INTEGER NOT NULL DEFAULT 10,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS daily_usage (
+            user_id INTEGER NOT NULL, usage_day TEXT NOT NULL, request_count INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY(user_id, usage_day)
+        )""")
 
 
 def add_message(chat_id, role, content):
@@ -156,3 +165,76 @@ def set_subscription(user_id, enabled):
 def recent_audit(limit=15):
     with _connect() as conn:
         return [dict(row) for row in conn.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT ?", (int(limit),)).fetchall()]
+
+# Membership defaults: 7-day trial with 10 total AI requests, then 3 requests/day free.
+def ensure_membership(user_id):
+    with _connect() as conn:
+        conn.execute("""INSERT OR IGNORE INTO memberships(user_id, plan, expires_at, trial_remaining)
+            VALUES (?, 'trial', datetime('now', '+7 days'), 10)""", (int(user_id),))
+
+
+def get_membership(user_id):
+    ensure_membership(user_id)
+    with _connect() as conn:
+        row = conn.execute("SELECT user_id, plan, expires_at, trial_remaining FROM memberships WHERE user_id=?", (int(user_id),)).fetchone()
+        usage = conn.execute("SELECT request_count FROM daily_usage WHERE user_id=? AND usage_day=date('now')", (int(user_id),)).fetchone()
+    item = dict(row)
+    if item["plan"] in ("trial", "granted") and item["expires_at"]:
+        with _connect() as conn:
+            expired = conn.execute("SELECT datetime(?) <= datetime('now')", (item["expires_at"],)).fetchone()[0]
+            if expired:
+                conn.execute("UPDATE memberships SET plan='free', expires_at=NULL WHERE user_id=?", (int(user_id),))
+                item["plan"], item["expires_at"] = "free", None
+    item["used_today"] = int(usage["request_count"]) if usage else 0
+    item["free_daily_limit"] = int(get_setting("free_daily_limit", "3"))
+    return item
+
+
+def consume_ai_request(user_id):
+    item = get_membership(user_id)
+    plan = item["plan"]
+    with _connect() as conn:
+        if plan == "trial":
+            row = conn.execute("SELECT trial_remaining FROM memberships WHERE user_id=?", (int(user_id),)).fetchone()
+            remaining = int(row["trial_remaining"])
+            if remaining <= 0:
+                conn.execute("UPDATE memberships SET plan='free', expires_at=NULL WHERE user_id=?", (int(user_id),))
+                return False, "trial_exhausted"
+            conn.execute("UPDATE memberships SET trial_remaining=trial_remaining-1 WHERE user_id=?", (int(user_id),))
+            return True, "trial"
+        if plan == "granted":
+            return True, "granted"
+        limit = int(get_setting("free_daily_limit", "3"))
+        conn.execute("""INSERT INTO daily_usage(user_id, usage_day, request_count) VALUES (?, date('now'), 1)
+            ON CONFLICT(user_id, usage_day) DO UPDATE SET request_count=request_count+1""", (int(user_id),))
+        count = conn.execute("SELECT request_count FROM daily_usage WHERE user_id=? AND usage_day=date('now')", (int(user_id),)).fetchone()["request_count"]
+        if count > limit:
+            conn.execute("UPDATE daily_usage SET request_count=request_count-1 WHERE user_id=? AND usage_day=date('now')", (int(user_id),))
+            return False, "free_limit"
+        return True, "free"
+
+
+def grant_membership(actor_id, user_id, days):
+    days = max(1, min(int(days), 3650))
+    ensure_membership(user_id)
+    with _connect() as conn:
+        conn.execute("""UPDATE memberships SET plan='granted',
+            expires_at=datetime('now', ?), trial_remaining=0 WHERE user_id=?""", (f"+{days} days", int(user_id)))
+    audit(actor_id, "membership_grant", user_id, f"{days} days")
+
+
+def revoke_membership(actor_id, user_id):
+    ensure_membership(user_id)
+    with _connect() as conn:
+        conn.execute("UPDATE memberships SET plan='free', expires_at=NULL, trial_remaining=0 WHERE user_id=?", (int(user_id),))
+    audit(actor_id, "membership_revoke", user_id)
+
+
+def membership_stats():
+    with _connect() as conn:
+        total = conn.execute("SELECT COUNT(*) n FROM memberships").fetchone()["n"]
+        trial = conn.execute("SELECT COUNT(*) n FROM memberships WHERE plan='trial' AND datetime(expires_at)>datetime('now') AND trial_remaining>0").fetchone()["n"]
+        granted = conn.execute("SELECT COUNT(*) n FROM memberships WHERE plan='granted' AND datetime(expires_at)>datetime('now')").fetchone()["n"]
+        expired = conn.execute("SELECT COUNT(*) n FROM memberships WHERE plan IN ('trial','granted') AND datetime(expires_at)<=datetime('now')").fetchone()["n"]
+        free = total - trial - granted
+    return {"total": total, "trial": trial, "granted": granted, "expired": expired, "free": free}
