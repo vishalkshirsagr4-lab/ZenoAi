@@ -324,7 +324,7 @@ def _download_telegram_file(file_id):
 def _analyze_upload(message, document):
     chat_id = message["chat"]["id"]
     filename = document.get("file_name") or "uploaded-file"
-    send_text(chat_id, "📥 <b>File received.</b> Checking its contents safely…", parse_mode="HTML")
+    send_text(chat_id, "📥 <b>File received.</b> Downloading and checking its contents safely…", parse_mode="HTML")
     data = _download_telegram_file(document["file_id"])
     is_archive = filename.lower().endswith((".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz"))
     if filename.lower().endswith(".zip"):
@@ -339,6 +339,7 @@ def _analyze_upload(message, document):
                 f"Archive entries: {file_count}; text files included: {text_count}.")
     else:
         task = f"Review {filename}: explain its purpose, identify concrete bugs and risks, and suggest corrected code."
+    send_text(chat_id, "🧠 <b>File read successfully.</b> ZenoAI is analyzing it now…", parse_mode="HTML")
     send_long_answer(chat_id, ask_ai(chat_id, task, extra_context=context), task)
 
 
@@ -621,7 +622,7 @@ def _handle_callback(callback):
         elif data == "mode_debug":
             send_text(chat_id, "🛠 Send the full error message and related code.")
         elif data == "mode_zip":
-            send_text(chat_id, "📦 Upload your project as a ZIP. I'll inspect source files without executing them.")
+            send_text(chat_id, "📦 <b>Project analysis</b>\nUpload a ZIP/TAR project archive, or send one source file directly (for example: .py, .js, .ts, .java, .dart, .html, .css, .json).\n\nI'll read supported files as text, inspect the code, and never execute uploaded files.", parse_mode="HTML")
         elif data in {"adm_stats", "adm_health"}:
             if data == "adm_stats":
                 s = stats()
