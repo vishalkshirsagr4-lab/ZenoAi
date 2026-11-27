@@ -69,6 +69,7 @@ def admin_keyboard(owner=False):
     if owner:
         rows.extend([
             [{"text": "👑 Admin list", "callback_data": "own_admins"}, {"text": "🧠 AI controls", "callback_data": "own_ai"}],
+            [{"text": "👤 Memberships", "callback_data": "own_membership"}, {"text": "📢 Force join", "callback_data": "own_forcejoin"}],
             [{"text": "🔧 Maintenance", "callback_data": "own_maintenance"}, {"text": "📜 Audit log", "callback_data": "own_audit"}],
         ])
     rows.append([{"text": "⬅️ Main menu", "callback_data": "home"}])
@@ -221,7 +222,8 @@ def _admin_command(message, text, user_id):
         _admin_help(chat_id, owner)
     elif command == "/stats":
         s = stats()
-        send_text(chat_id, f"📊 <b>ZenoAI statistics</b>\nUsers: {s['users']}\nSubscribers: {s['subscribers']}\nBanned: {s['banned']}\nAdmins: {s['admins']}\nAI messages stored: {s['messages']}", parse_mode="HTML")
+        m = membership_stats()
+        send_text(chat_id, f"📊 <b>ZenoAI statistics</b>\nUsers: {s['users']}\nSubscribers: {s['subscribers']}\nBanned: {s['banned']}\nAdmins: {s['admins']}\nAI messages stored: {s['messages']}\n\n👤 <b>Memberships</b>\nTrial: {m['trial']}\nGranted: {m['granted']}\nFree: {m['free']}\nExpired: {m['expired']}", parse_mode="HTML")
     elif command in {"/ban", "/unban"}:
         if not arg.isdigit():
             send_text(chat_id, f"Usage: {command} USER_ID")
@@ -467,6 +469,13 @@ def _handle_callback(callback):
             rows = list_admins()
             body = "\n".join(f"• {r['user_id']} (added by {r['added_by']})" for r in rows) or "No additional admins."
             send_text(chat_id, "👑 <b>Admins</b>\n" + html.escape(body) + "\n\n/addadmin USER_ID\n/removeadmin USER_ID", parse_mode="HTML")
+        elif data == "own_membership":
+            m = membership_stats()
+            send_text(chat_id, "👤 <b>Membership overview</b>\nTrial: {}\nGranted: {}\nFree: {}\nExpired: {}\n\n/grant USER_ID DAYS\n/revoke USER_ID".format(m["trial"], m["granted"], m["free"], m["expired"]), parse_mode="HTML")
+        elif data == "own_forcejoin":
+            entries = _force_join_entries()
+            body = "\n".join("{} — {}".format(x.get("chat_id"), x.get("url")) for x in entries) or "No required channels/groups configured."
+            send_text(chat_id, "📢 <b>Force-join management</b>\n{}\n\n/forceadd @channel https://t.me/channel\n/forceremove @channel\n/forcelist\n\nThe bot must be an administrator in every required destination.".format(html.escape(body)), parse_mode="HTML")
         elif data == "own_ai":
             model = get_setting("model", config.apinex_model)
             send_text(chat_id, f"🧠 Current model: <code>{html.escape(model)}</code>\nChange: /model MODEL_ID\nUpdate behavior: /prompt YOUR INSTRUCTIONS", parse_mode="HTML")
