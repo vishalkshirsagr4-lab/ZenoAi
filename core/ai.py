@@ -50,6 +50,7 @@ def ask_ai(chat_id, user_text, extra_context=None):
     answer = (answer or "").strip()
     if not answer:
         raise RuntimeError("The AI provider returned an empty response.")
-    add_message(chat_id, "user", prompt[:120000])
+    # Keep the durable conversation concise; do not duplicate an entire ZIP archive in SQLite.
+    add_message(chat_id, "user", str(user_text)[:12000])
     add_message(chat_id, "assistant", answer[:200000])
     return answer
