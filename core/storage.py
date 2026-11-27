@@ -26,7 +26,7 @@ def boot():
         conn.execute("""CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY, username TEXT, first_name TEXT,
             is_banned INTEGER NOT NULL DEFAULT 0,
-            subscribed INTEGER NOT NULL DEFAULT 1,
+            subscribed INTEGER NOT NULL DEFAULT 0,
             last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
         )""")
         conn.execute("""CREATE TABLE IF NOT EXISTS admins (
@@ -66,8 +66,8 @@ def register_user(user):
     if not user_id:
         return
     with _connect() as conn:
-        conn.execute("""INSERT INTO users(user_id, username, first_name, last_seen)
-            VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+        conn.execute("""INSERT INTO users(user_id, username, first_name, subscribed, last_seen)
+            VALUES (?, ?, ?, 0, CURRENT_TIMESTAMP)
             ON CONFLICT(user_id) DO UPDATE SET username=excluded.username,
             first_name=excluded.first_name, last_seen=CURRENT_TIMESTAMP""",
             (user_id, user.get("username"), user.get("first_name")))
@@ -81,7 +81,8 @@ def is_banned(user_id):
 
 def set_banned(actor_id, user_id, banned):
     with _connect() as conn:
-        conn.execute("UPDATE users SET is_banned=? WHERE user_id=?", (int(bool(banned)), int(user_id)))
+        conn.execute("""INSERT INTO users(user_id, is_banned, subscribed) VALUES (?, ?, 0)
+            ON CONFLICT(user_id) DO UPDATE SET is_banned=excluded.is_banned""", (int(user_id), int(bool(banned))))
     audit(actor_id, "ban" if banned else "unban", user_id)
 
 
