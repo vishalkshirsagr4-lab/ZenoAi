@@ -168,9 +168,11 @@ def recent_audit(limit=15):
 
 # Membership defaults: 7-day trial with 10 total AI requests, then 3 requests/day free.
 def ensure_membership(user_id):
+    trial_days = max(1, min(int(get_setting("trial_days", "7")), 365))
+    trial_requests = max(1, min(int(get_setting("trial_requests", "10")), 10000))
     with _connect() as conn:
         conn.execute("""INSERT OR IGNORE INTO memberships(user_id, plan, expires_at, trial_remaining)
-            VALUES (?, 'trial', datetime('now', '+7 days'), 10)""", (int(user_id),))
+            VALUES (?, 'trial', datetime('now', ?), ?)""", (int(user_id), f"+{trial_days} days", trial_requests))
 
 
 def get_membership(user_id):
