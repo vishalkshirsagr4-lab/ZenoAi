@@ -241,5 +241,5 @@ def membership_stats():
         trial = conn.execute("SELECT COUNT(*) n FROM memberships WHERE plan='trial' AND datetime(expires_at)>datetime('now') AND trial_remaining>0").fetchone()["n"]
         granted = conn.execute("SELECT COUNT(*) n FROM memberships WHERE plan='granted' AND datetime(expires_at)>datetime('now')").fetchone()["n"]
         expired = conn.execute("SELECT COUNT(*) n FROM memberships WHERE expired_at IS NOT NULL").fetchone()["n"]
-        free = total - trial - granted
+        free = total - trial - granted - expired
     return {"total": total, "trial": trial, "granted": granted, "expired": expired, "free": free}
