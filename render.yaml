@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: zenoai
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: APINEX_API_KEY
+        sync: false
+      - key: APINEX_MODEL
+        value: deepseek-v4-flash
+      - key: APINEX_BASE_URL
+        value: https://api.apinex.bond/v1
