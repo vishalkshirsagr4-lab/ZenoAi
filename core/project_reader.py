@@ -60,13 +60,13 @@ MAX_CONTEXT_CHARS = 180000
 
 
 def _safe_name(name):
-    normalized = str(name).replace("\\\\", "/")
+    normalized = str(name).replace("\\", "/")
     path = PurePosixPath(normalized)
     return (
         bool(normalized)
         and not path.is_absolute()
         and not normalized.startswith("/")
-        and "\\\\x00" not in normalized
+        and "\x00" not in normalized
         and ".." not in path.parts
     )
 
@@ -78,7 +78,7 @@ def _is_text_name(name):
 
 
 def _decode_text(raw):
-    if b"\\x00" in raw[:4096]:
+    if b"\x00" in raw[:4096]:
         return None
     for encoding in ("utf-8-sig", "utf-8", "utf-16", "cp1252"):
         try:
@@ -102,20 +102,20 @@ def _read_archive_member(name, raw, tree, excerpts, max_text):
     if not _is_text_name(name):
         return
     if len(raw) > max_text:
-        excerpts.append(f"--- {name} ---\\n[Skipped: file exceeds {config.max_file_text_kb} KB text limit]")
+        excerpts.append(f"--- {name} ---\n[Skipped: file exceeds {config.max_file_text_kb} KB text limit]")
         return
     text = _decode_text(raw)
     if text is not None:
-        excerpts.append(f"--- FILE: {name} ---\\n{text}")
+        excerpts.append(f"--- FILE: {name} ---\n{text}")
 
 
 def _finish_archive(tree, excerpts):
     if not tree:
         raise ValueError("No readable project entries were found in this archive.")
-    tree_text = "PROJECT TREE:\\n" + "\\n".join(tree[:config.max_archive_files])
-    combined = tree_text + "\\n\\nSOURCE EXCERPTS:\\n" + "\\n\\n".join(excerpts)
+    tree_text = "PROJECT TREE:\n" + "\n".join(tree[:config.max_archive_files])
+    combined = tree_text + "\n\nSOURCE EXCERPTS:\n" + "\n\n".join(excerpts)
     if len(combined) > MAX_CONTEXT_CHARS:
-        combined = combined[:MAX_CONTEXT_CHARS] + "\\n\\n[Context truncated to fit safe analysis limits.]"
+        combined = combined[:MAX_CONTEXT_CHARS] + "\n\n[Context truncated to fit safe analysis limits.]"
     return combined, len(tree), len(excerpts)
 
 
@@ -163,12 +163,12 @@ def read_zip_bytes(data):
             if not _is_text_name(info.filename):
                 continue
             if info.file_size > max_text:
-                excerpts.append(f"--- {info.filename} ---\\n[Skipped: file exceeds {config.max_file_text_kb} KB text limit]")
+                excerpts.append(f"--- {info.filename} ---\n[Skipped: file exceeds {config.max_file_text_kb} KB text limit]")
                 continue
             raw = archive.read(info)
             text = _decode_text(raw)
             if text is not None:
-                excerpts.append(f"--- FILE: {info.filename} ---\\n{text}")
+                excerpts.append(f"--- FILE: {info.filename} ---\n{text}")
         return _finish_archive(tree, excerpts)
 
 
@@ -203,13 +203,13 @@ def read_tar_bytes(data):
             if not _is_text_name(member.name):
                 continue
             if member.size > max_text:
-                excerpts.append(f"--- {member.name} ---\\n[Skipped: file exceeds {config.max_file_text_kb} KB text limit]")
+                excerpts.append(f"--- {member.name} ---\n[Skipped: file exceeds {config.max_file_text_kb} KB text limit]")
                 continue
             stream = archive.extractfile(member)
             raw = stream.read(max_text + 1) if stream else b""
             text = _decode_text(raw)
             if text is not None:
-                excerpts.append(f"--- FILE: {member.name} ---\\n{text}")
+                excerpts.append(f"--- FILE: {member.name} ---\n{text}")
         return _finish_archive(tree, excerpts)
 
 
@@ -225,4 +225,4 @@ def read_single_source(filename, data):
         raise ValueError("This looks like a binary or unsupported text file. Please upload source code or a project archive.")
     if not _is_text_name(name):
         raise ValueError(f"Unsupported source/document extension: {PurePosixPath(name).suffix or '(none)'}.")
-    return f"--- FILE: {name} ---\\n{text}", 1, 1
+    return f"--- FILE: {name} ---\n{text}", 1, 1
