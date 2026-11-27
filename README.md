@@ -22,6 +22,7 @@ Create the service from this repository or use the Blueprint:
 
 Add these environment variables in Render:
 - `TELEGRAM_BOT_TOKEN` — token from BotFather.
+- `OWNER_ID` — your numeric Telegram user ID; required for the owner account and owner-only controls.
 - `APINEX_API_KEY` — your APInex API key.
 - `APINEX_MODEL` — optional; default is `deepseek-v4-flash`.
 - `BOT_NAME` — optional; default is `ZenoAI`.
@@ -42,3 +43,11 @@ Open `prompts/behavior.txt` and paste your own behavior instructions in the mark
 3. Run: `python main.py`
 
 Never commit your Telegram token or APInex API key.
+
+## Owner and admin controls
+
+Open the bot and use `/admin`:
+- Owner: `/addadmin USER_ID`, `/removeadmin USER_ID`, `/model MODEL_ID`, `/prompt YOUR_INSTRUCTIONS`, `/maintenance on|off`, `/audit`.
+- Admins: `/stats`, `/ban USER_ID`, `/unban USER_ID`, `/broadcast MESSAGE`.
+- Announcements are delivered only to users who explicitly use `/subscribe`; users can opt out with `/unsubscribe`.
+- Admin actions are recorded in the audit log. The owner cannot be banned or demoted.
