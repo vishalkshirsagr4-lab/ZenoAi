@@ -13,6 +13,8 @@ services:
         sync: false
       - key: APINEX_API_KEY
         sync: false
+      - key: OWNER_ID
+        sync: false
       - key: APINEX_MODEL
         value: deepseek-v4-flash
       - key: APINEX_BASE_URL
