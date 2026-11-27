@@ -1,5 +1,6 @@
 import html
 import io
+import json
 import logging
 import time
 import requests
@@ -9,7 +10,8 @@ from core.project_reader import read_zip_bytes, read_single_source
 from core.storage import (
     clear_history, register_user, is_banned, is_admin, add_admin, remove_admin,
     set_banned, stats, list_admins, set_setting, get_setting, subscribers,
-    set_subscription, recent_audit,
+    set_subscription, recent_audit, get_membership, consume_ai_request,
+    grant_membership, revoke_membership, membership_stats,
 )
 
 log = logging.getLogger("zeno.telegram")
@@ -52,7 +54,8 @@ def send_long_answer(chat_id, answer):
 def home_keyboard():
     return {"inline_keyboard": [
         [{"text": "💻 Coding", "callback_data": "mode_coding"}, {"text": "🧩 Debug", "callback_data": "mode_debug"}],
-        [{"text": "📦 Analyze ZIP", "callback_data": "mode_zip"}, {"text": "⚙️ Settings", "callback_data": "settings"}],
+        [{"text": "📦 Analyze ZIP", "callback_data": "mode_zip"}, {"text": "👤 Membership", "callback_data": "membership"}],
+        [{"text": "⚙️ Settings", "callback_data": "settings"}],
         [{"text": "📚 Help", "callback_data": "help"}, {"text": "ℹ️ About", "callback_data": "about"}],
         [{"text": "🧹 Clear chat", "callback_data": "clear"}],
     ]}
@@ -71,6 +74,55 @@ def admin_keyboard(owner=False):
     rows.append([{"text": "⬅️ Main menu", "callback_data": "home"}])
     return {"inline_keyboard": rows}
 
+
+
+def _force_join_entries():
+    try:
+        value = json.loads(get_setting("force_join_chats", "[]"))
+        return value if isinstance(value, list) else []
+    except (TypeError, ValueError):
+        return []
+
+
+def _force_join_prompt(chat_id, user_id):
+    entries = _force_join_entries()
+    missing = []
+    for entry in entries:
+        try:
+            member = _api("getChatMember", {"chat_id": entry["chat_id"], "user_id": int(user_id)})
+            if member.get("status") not in {"member", "administrator", "creator"}:
+                missing.append(entry)
+        except Exception:
+            log.exception("Force-join verification failed")
+            send_text(chat_id, "⚠️ Membership verification is unavailable. Please contact the owner.")
+            return False
+    if not missing:
+        return True
+    rows = [[{"text": "📢 Join " + x.get("title", x["chat_id"]), "url": x["url"]}] for x in missing]
+    rows.append([{"text": "🔄 I've joined — Verify", "callback_data": "verify_join"}])
+    send_text(chat_id, "🔒 <b>Join the required channels/groups to use ZenoAI.</b>", {"inline_keyboard": rows}, "HTML")
+    return False
+
+
+def _membership_text(user_id):
+    item = get_membership(user_id)
+    if item["plan"] == "trial":
+        detail = "Trial requests left: <b>{}</b>\nExpires: <code>{} UTC</code>".format(item["trial_remaining"], html.escape(str(item["expires_at"])))
+    elif item["plan"] == "granted":
+        detail = "Expires: <code>{} UTC</code>\nAI requests: <b>Unlimited</b>".format(html.escape(str(item["expires_at"])))
+    else:
+        left = max(0, item["free_daily_limit"] - item["used_today"])
+        detail = "Free requests left today: <b>{}/{}</b>".format(left, item["free_daily_limit"])
+    return "👤 <b>Your ZenoAI membership</b>\n━━━━━━━━━━━━━━━━━━\nPlan: <b>{}</b>\n{}".format(item["plan"].capitalize(), detail)
+
+
+def _membership_gate(chat_id, user_id):
+    allowed, reason = consume_ai_request(user_id)
+    if allowed:
+        return True
+    message = "🎁 Your trial allowance is finished. You are now on the Free plan." if reason == "trial_exhausted" else "⏳ Your Free daily limit is reached. Try tomorrow or contact the owner for access."
+    send_text(chat_id, message + "\n\n" + _membership_text(user_id), home_keyboard(), "HTML")
+    return False
 
 def _welcome(message):
     user = message.get("from") or {}
@@ -151,6 +203,8 @@ def _admin_help(chat_id, owner):
             "/model MODEL_ID — change APInex model",
             "/prompt TEXT — replace AI system instructions",
             "/maintenance on|off",
+            "/grant USER_ID DAYS and /revoke USER_ID",
+            "/forceadd CHAT_ID JOIN_URL", "/forceremove CHAT_ID", "/forcelist",
             "/audit — recent administrative actions",
         ]
     lines += ["", "Use the dashboard buttons for quick status and control panels."]
@@ -230,6 +284,43 @@ def _admin_command(message, text, user_id):
             return
         set_setting("maintenance", value, user_id)
         send_text(chat_id, f"🔧 Maintenance mode: {value.upper()}")
+
+    elif command == "/grant" and owner:
+        values = arg.split()
+        if len(values) != 2 or not values[0].isdigit() or not values[1].isdigit():
+            send_text(chat_id, "Usage: /grant USER_ID DAYS")
+            return
+        grant_membership(user_id, int(values[0]), int(values[1]))
+        send_text(chat_id, "Granted {} days to {}.".format(values[1], values[0]))
+    elif command == "/revoke" and owner:
+        if not arg.isdigit():
+            send_text(chat_id, "Usage: /revoke USER_ID")
+            return
+        revoke_membership(user_id, int(arg))
+        send_text(chat_id, "Access revoked for {}.".format(arg))
+    elif command == "/forceadd" and owner:
+        values = arg.split(maxsplit=1)
+        if len(values) != 2 or not (values[0].startswith("@") or values[0].lstrip("-").isdigit()) or not values[1].startswith("https://t.me/"):
+            send_text(chat_id, "Usage: /forceadd @channel https://t.me/channel")
+            return
+        entries = _force_join_entries()
+        if any(str(x.get("chat_id")).lower() == values[0].lower() for x in entries):
+            send_text(chat_id, "Already configured.")
+            return
+        entries.append({"chat_id": values[0], "url": values[1], "title": values[0]})
+        set_setting("force_join_chats", json.dumps(entries), user_id)
+        send_text(chat_id, "Added. Make the bot an administrator there so Telegram can verify membership.")
+    elif command == "/forceremove" and owner:
+        if not arg:
+            send_text(chat_id, "Usage: /forceremove @channel")
+            return
+        entries = [x for x in _force_join_entries() if str(x.get("chat_id")).lower() != arg.lower()]
+        set_setting("force_join_chats", json.dumps(entries), user_id)
+        send_text(chat_id, "Force-join destination removed.")
+    elif command == "/forcelist" and owner:
+        entries = _force_join_entries()
+        body = "\n".join("• {} — {}".format(x.get("chat_id"), x.get("url")) for x in entries) or "No force-join destinations configured."
+        send_text(chat_id, "📢 <b>Force-join destinations</b>\n" + html.escape(body), parse_mode="HTML")
     elif command == "/audit" and owner:
         rows = recent_audit()
         body = "\n".join(f"#{r['id']} actor={r['actor_id']} {r['action']} target={r['target_id'] or '-'}" for r in rows) or "No audit entries yet."
@@ -271,9 +362,13 @@ def _handle_message(message):
     if text.startswith("/about"):
         send_text(chat_id, f"✨ <b>{html.escape(config.bot_name)}</b>\nAI coding assistant powered by APInex.", home_keyboard(), "HTML")
         return
+    if text.startswith("/membership"):
+        send_text(chat_id, _membership_text(user_id), home_keyboard(), "HTML")
+        return
     if text.split(maxsplit=1)[0].split("@", 1)[0].lower() in {
         "/admin", "/stats", "/ban", "/unban", "/broadcast", "/addadmin",
-        "/removeadmin", "/model", "/prompt", "/maintenance", "/audit"
+        "/removeadmin", "/model", "/prompt", "/maintenance", "/audit",
+        "/grant", "/revoke", "/forceadd", "/forceremove", "/forcelist"
     }:
         if not is_admin(user_id):
             send_text(chat_id, "⛔ You do not have permission to use administrative commands.")
@@ -283,9 +378,13 @@ def _handle_message(message):
     if get_setting("maintenance", "off") == "on" and not is_admin(user_id):
         send_text(chat_id, "🛠 ZenoAI is temporarily under maintenance. Please try again later.")
         return
+    if not is_admin(user_id) and not _force_join_prompt(chat_id, user_id):
+        return
     document = message.get("document")
     if document:
         try:
+            if not is_admin(user_id) and not _membership_gate(chat_id, user_id):
+                return
             _analyze_upload(message, document)
         except Exception as exc:
             log.exception("Document analysis failed")
@@ -295,6 +394,8 @@ def _handle_message(message):
         send_text(chat_id, "Please send a text prompt or upload a ZIP/source file. Use /help for supported features.")
         return
     try:
+        if not is_admin(user_id) and not _membership_gate(chat_id, user_id):
+            return
         send_text(chat_id, "🧠 <b>ZenoAI is thinking…</b>", parse_mode="HTML")
         send_long_answer(chat_id, ask_ai(chat_id, text))
     except Exception:
@@ -333,6 +434,11 @@ def _handle_callback(callback):
             _help(chat_id)
         elif data == "about":
             send_text(chat_id, f"✨ <b>{html.escape(config.bot_name)}</b>\nAI coding assistant powered by APInex.", home_keyboard(), "HTML")
+        elif data == "membership":
+            send_text(chat_id, _membership_text(user_id), home_keyboard(), "HTML")
+        elif data == "verify_join":
+            if _force_join_prompt(chat_id, user_id):
+                send_text(chat_id, "Membership verified. You can now use ZenoAI.", home_keyboard())
         elif data == "settings":
             model = get_setting("model", config.apinex_model)
             send_text(chat_id, f"⚙️ <b>Settings</b>\nModel: <code>{html.escape(model)}</code>\nMemory: {config.max_context_messages} messages\nUpload limit: {config.max_upload_mb} MB", {
