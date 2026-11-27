@@ -37,6 +37,13 @@ def boot():
             key TEXT PRIMARY KEY, value TEXT NOT NULL,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )""")
+        # Migrate the previous built-in default without overriding deliberate
+        # owner-selected models. Existing custom model choices remain untouched.
+        conn.execute(
+            "UPDATE settings SET value=?, updated_at=CURRENT_TIMESTAMP "
+            "WHERE key='model' AND value='deepseek-v4-flash'",
+            (config.apinex_model,),
+        )
         conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT, actor_id INTEGER NOT NULL,
             action TEXT NOT NULL, target_id INTEGER, details TEXT,
