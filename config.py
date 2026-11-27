@@ -13,7 +13,7 @@ class Config:
     bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     apinex_api_key: str = os.getenv("APINEX_API_KEY", "").strip()
     apinex_base_url: str = os.getenv("APINEX_BASE_URL", "https://api.apinex.bond/v1").strip().rstrip("/")
-    apinex_model: str = os.getenv("APINEX_MODEL", "deepseek-v4-flash").strip()
+    apinex_model: str = os.getenv("APINEX_MODEL", "claude-sonnet-5.5").strip()
     bot_name: str = os.getenv("BOT_NAME", "ZenoAI").strip() or "ZenoAI"
     database_path: str = os.getenv("DATABASE_PATH", "data/zenoai.db")
     system_prompt: str = os.getenv("AI_SYSTEM_PROMPT", "").strip()
