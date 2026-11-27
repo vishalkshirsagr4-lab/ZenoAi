@@ -83,7 +83,10 @@ def _welcome(message):
         "📦 Upload a ZIP to inspect source files\n🧠 Continue conversations with chat context\n\n"
         "<i>Choose a tool below, or simply send me a message.</i>"
     )
-    send_text(message["chat"]["id"], text, home_keyboard(), "HTML")
+    keyboard = home_keyboard()
+    if is_admin((message.get("from") or {}).get("id", 0)):
+        keyboard["inline_keyboard"].insert(0, [{"text": "👑 Admin / Owner Panel", "callback_data": "admin_panel"}])
+    send_text(message["chat"]["id"], text, keyboard, "HTML")
 
 
 def _help(chat_id):
@@ -172,6 +175,9 @@ def _admin_command(message, text, user_id):
         target = int(arg)
         if target == config.owner_id:
             send_text(chat_id, "⛔ Owner account cannot be banned.")
+            return
+        if is_admin(target) and not owner:
+            send_text(chat_id, "⛔ Admins cannot ban another admin.")
             return
         set_banned(user_id, target, command == "/ban")
         send_text(chat_id, f"✅ User {target} {'banned' if command == '/ban' else 'unbanned'}.")
@@ -319,7 +325,9 @@ def _handle_callback(callback):
         if data.startswith("own_") and not owner:
             send_text(chat_id, "⛔ Owner-only control.")
             return
-        if data == "home":
+        if data == "admin_panel":
+            _admin_help(chat_id, owner)
+        elif data == "home":
             send_text(chat_id, f"✨ <b>{html.escape(config.bot_name)}</b>\nChoose what you'd like to do.", home_keyboard(), "HTML")
         elif data == "help":
             _help(chat_id)
