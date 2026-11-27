@@ -203,7 +203,7 @@ def consume_ai_request(user_id):
             row = conn.execute("SELECT trial_remaining FROM memberships WHERE user_id=?", (int(user_id),)).fetchone()
             remaining = int(row["trial_remaining"])
             if remaining <= 0:
-                conn.execute("UPDATE memberships SET plan='free', expires_at=NULL WHERE user_id=?", (int(user_id),))
+                conn.execute("UPDATE memberships SET plan='free', expires_at=NULL, expired_at=CURRENT_TIMESTAMP WHERE user_id=?", (int(user_id),))
                 return False, "trial_exhausted"
             conn.execute("UPDATE memberships SET trial_remaining=trial_remaining-1 WHERE user_id=?", (int(user_id),))
             return True, "trial"
@@ -224,7 +224,7 @@ def grant_membership(actor_id, user_id, days):
     ensure_membership(user_id)
     with _connect() as conn:
         conn.execute("""UPDATE memberships SET plan='granted',
-            expires_at=datetime('now', ?), trial_remaining=0 WHERE user_id=?""", (f"+{days} days", int(user_id)))
+            expires_at=datetime('now', ?), expired_at=NULL, trial_remaining=0 WHERE user_id=?""", (f"+{days} days", int(user_id)))
     audit(actor_id, "membership_grant", user_id, f"{days} days")
 
 
