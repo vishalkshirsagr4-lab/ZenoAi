@@ -326,15 +326,18 @@ def _analyze_upload(message, document):
     filename = document.get("file_name") or "uploaded-file"
     send_text(chat_id, "📥 <b>File received.</b> Checking its contents safely…", parse_mode="HTML")
     data = _download_telegram_file(document["file_id"])
+    is_archive = filename.lower().endswith((".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz"))
     if filename.lower().endswith(".zip"):
         context, file_count, text_count = read_zip_bytes(data)
     elif filename.lower().endswith((".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tar.xz")):
         context, file_count, text_count = read_tar_bytes(data)
+    else:
+        context, _, _ = read_single_source(filename, data)
+    if is_archive:
         task = ("Review this uploaded software project. Summarize its architecture, list confirmed issues by severity "
                 "and file path, explain causes and provide concrete fixes. Mention unverified areas; do not claim tests ran. "
                 f"Archive entries: {file_count}; text files included: {text_count}.")
     else:
-        context, _, _ = read_single_source(filename, data)
         task = f"Review {filename}: explain its purpose, identify concrete bugs and risks, and suggest corrected code."
     send_long_answer(chat_id, ask_ai(chat_id, task, extra_context=context), task)
 
