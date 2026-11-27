@@ -535,7 +535,8 @@ def _handle_message(message):
     if text.startswith("/membership"):
         send_text(chat_id, _membership_text(user_id), home_keyboard(), "HTML")
         return
-    if text.split(maxsplit=1)[0].split("@", 1)[0].lower() in {
+    command = text.split(maxsplit=1)[0].split("@", 1)[0].lower() if text else ""
+    if command in {
         "/admin", "/stats", "/ban", "/unban", "/broadcast", "/addadmin",
         "/removeadmin", "/model", "/prompt", "/maintenance", "/audit",
         "/grant", "/revoke", "/forceadd", "/forceremove", "/forcelist", "/limits"
