@@ -52,25 +52,52 @@ def send_long_answer(chat_id, answer):
 
 
 def home_keyboard():
+    """Zeno Empire home menu. Button styles are supported by Telegram Bot API 9.4+."""
     return {"inline_keyboard": [
-        [{"text": "💻 Coding", "callback_data": "mode_coding"}, {"text": "🧩 Debug", "callback_data": "mode_debug"}],
-        [{"text": "📦 Analyze ZIP", "callback_data": "mode_zip"}, {"text": "👤 Membership", "callback_data": "membership"}],
-        [{"text": "⚙️ Settings", "callback_data": "settings"}],
-        [{"text": "📚 Help", "callback_data": "help"}, {"text": "ℹ️ About", "callback_data": "about"}],
-        [{"text": "🧹 Clear chat", "callback_data": "clear"}],
+        [
+            {"text": "💻 Start coding", "callback_data": "mode_coding", "style": "primary"},
+            {"text": "🧩 Debug code", "callback_data": "mode_debug", "style": "success"},
+        ],
+        [
+            {"text": "📦 Analyze project", "callback_data": "mode_zip", "style": "primary"},
+            {"text": "👤 Membership", "callback_data": "membership", "style": "success"},
+        ],
+        [
+            {"text": "⚙️ Settings", "callback_data": "settings"},
+            {"text": "📚 Help", "callback_data": "help"},
+        ],
+        [
+            {"text": "ℹ️ About", "callback_data": "about"},
+            {"text": "🧹 Clear chat", "callback_data": "clear", "style": "danger"},
+        ],
     ]}
 
 
 def admin_keyboard(owner=False):
     rows = [
-        [{"text": "📊 Statistics", "callback_data": "adm_stats"}, {"text": "🛡 User tools", "callback_data": "adm_users"}],
-        [{"text": "📣 Announcement", "callback_data": "adm_broadcast"}, {"text": "🩺 Service health", "callback_data": "adm_health"}],
+        [
+            {"text": "📊 Statistics", "callback_data": "adm_stats", "style": "primary"},
+            {"text": "🛡 User tools", "callback_data": "adm_users"},
+        ],
+        [
+            {"text": "📣 Announcement", "callback_data": "adm_broadcast", "style": "success"},
+            {"text": "🩺 Service health", "callback_data": "adm_health"},
+        ],
     ]
     if owner:
         rows.extend([
-            [{"text": "👑 Admin list", "callback_data": "own_admins"}, {"text": "🧠 AI controls", "callback_data": "own_ai"}],
-            [{"text": "👤 Memberships", "callback_data": "own_membership"}, {"text": "📢 Force join", "callback_data": "own_forcejoin"}],
-            [{"text": "🔧 Maintenance", "callback_data": "own_maintenance"}, {"text": "📜 Audit log", "callback_data": "own_audit"}],
+            [
+                {"text": "👑 Admin list", "callback_data": "own_admins"},
+                {"text": "🧠 AI controls", "callback_data": "own_ai", "style": "primary"},
+            ],
+            [
+                {"text": "👤 Memberships", "callback_data": "own_membership", "style": "success"},
+                {"text": "📢 Force join", "callback_data": "own_forcejoin"},
+            ],
+            [
+                {"text": "🔧 Maintenance", "callback_data": "own_maintenance", "style": "danger"},
+                {"text": "📜 Audit log", "callback_data": "own_audit"},
+            ],
         ])
     rows.append([{"text": "⬅️ Main menu", "callback_data": "home"}])
     return {"inline_keyboard": rows}
@@ -129,16 +156,25 @@ def _welcome(message):
     user = message.get("from") or {}
     first_name = html.escape(user.get("first_name") or "there")
     text = (
-        f"✨ <b>Welcome to {html.escape(config.bot_name)}, {first_name}!</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        "🤖 Your AI workspace for coding, debugging and project analysis.\n\n"
-        "💻 Generate code and complete project files\n🛠 Find bugs and understand errors\n"
-        "📦 Upload a ZIP to inspect source files\n🧠 Continue conversations with chat context\n\n"
-        "<i>Choose a tool below, or simply send me a message.</i>"
+        "⚡ <b>ZENO EMPIRE</b>\n"
+        "<i>Powered by ZenoAI</i>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        f"<blockquote><b>Welcome, {first_name}!</b>\n"
+        "Your personal AI workspace to plan, code, debug and understand software.</blockquote>\n"
+        " <b>WHAT YOU CAN DO</b>\n"
+        "💻 <b>Build</b> — generate code and project files\n"
+        "🛠 <b>Debug</b> — understand errors and fix issues\n"
+        "📦 <b>Analyze</b> — inspect ZIP and source files safely\n"
+        "🧠 <b>Chat</b> — continue with conversation context\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "<i>“Build with clarity. Debug with confidence. Keep creating.”</i>\n\n"
+        "<b>Choose an action below</b> or send a message to begin."
     )
     keyboard = home_keyboard()
     if is_admin((message.get("from") or {}).get("id", 0)):
-        keyboard["inline_keyboard"].insert(0, [{"text": "👑 Admin / Owner Panel", "callback_data": "admin_panel"}])
+        keyboard["inline_keyboard"].insert(0, [
+            {"text": "👑 Admin / Owner Panel", "callback_data": "admin_panel", "style": "primary"}
+        ])
     send_text(message["chat"]["id"], text, keyboard, "HTML")
 
 
