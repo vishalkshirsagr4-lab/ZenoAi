@@ -44,9 +44,12 @@ def boot():
         )""")
         conn.execute("""CREATE TABLE IF NOT EXISTS memberships (
             user_id INTEGER PRIMARY KEY, plan TEXT NOT NULL DEFAULT 'trial',
-            expires_at TEXT, trial_remaining INTEGER NOT NULL DEFAULT 10,
+            expires_at TEXT, expired_at TEXT, trial_remaining INTEGER NOT NULL DEFAULT 10,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )""")
+        membership_columns = {row["name"] for row in conn.execute("PRAGMA table_info(memberships)").fetchall()}
+        if "expired_at" not in membership_columns:
+            conn.execute("ALTER TABLE memberships ADD COLUMN expired_at TEXT")
         conn.execute("""CREATE TABLE IF NOT EXISTS daily_usage (
             user_id INTEGER NOT NULL, usage_day TEXT NOT NULL, request_count INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY(user_id, usage_day)
@@ -185,7 +188,7 @@ def get_membership(user_id):
         with _connect() as conn:
             expired = conn.execute("SELECT datetime(?) <= datetime('now')", (item["expires_at"],)).fetchone()[0]
             if expired:
-                conn.execute("UPDATE memberships SET plan='free', expires_at=NULL WHERE user_id=?", (int(user_id),))
+                conn.execute("UPDATE memberships SET plan='free', expires_at=NULL, expired_at=CURRENT_TIMESTAMP WHERE user_id=?", (int(user_id),))
                 item["plan"], item["expires_at"] = "free", None
     item["used_today"] = int(usage["request_count"]) if usage else 0
     item["free_daily_limit"] = int(get_setting("free_daily_limit", "3"))
@@ -228,7 +231,7 @@ def grant_membership(actor_id, user_id, days):
 def revoke_membership(actor_id, user_id):
     ensure_membership(user_id)
     with _connect() as conn:
-        conn.execute("UPDATE memberships SET plan='free', expires_at=NULL, trial_remaining=0 WHERE user_id=?", (int(user_id),))
+        conn.execute("UPDATE memberships SET plan='free', expires_at=NULL, expired_at=NULL, trial_remaining=0 WHERE user_id=?", (int(user_id),))
     audit(actor_id, "membership_revoke", user_id)
 
 
@@ -237,6 +240,6 @@ def membership_stats():
         total = conn.execute("SELECT COUNT(*) n FROM memberships").fetchone()["n"]
         trial = conn.execute("SELECT COUNT(*) n FROM memberships WHERE plan='trial' AND datetime(expires_at)>datetime('now') AND trial_remaining>0").fetchone()["n"]
         granted = conn.execute("SELECT COUNT(*) n FROM memberships WHERE plan='granted' AND datetime(expires_at)>datetime('now')").fetchone()["n"]
-        expired = conn.execute("SELECT COUNT(*) n FROM memberships WHERE plan IN ('trial','granted') AND datetime(expires_at)<=datetime('now')").fetchone()["n"]
+        expired = conn.execute("SELECT COUNT(*) n FROM memberships WHERE expired_at IS NOT NULL").fetchone()["n"]
         free = total - trial - granted
     return {"total": total, "trial": trial, "granted": granted, "expired": expired, "free": free}
